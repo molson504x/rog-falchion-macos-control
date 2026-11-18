@@ -2,7 +2,7 @@
 
 An early-stage project to make it possible to configure the ASUS ROG Falchion keyboard from macOS. ASUS provides Armoury Crate for configuring the keyboard, but its download requirements currently list Windows 10 (version 1903 or later) or Windows 11, not macOS.
 
-**Project status:** this repository does not yet contain a runnable application. The capabilities below describe development goals, not features that are already implemented.
+**Project status:** scaffolded. A Rust CLI (`falchion`) and GUI (`falchion-gui`) build and are unit-tested, but the keyboard's HID protocol has **not yet been reverse-engineered**, so commands use placeholder packets and are not expected to work on real hardware yet. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## About
 
@@ -12,11 +12,17 @@ The ROG Falchion is a compact 65% wireless mechanical keyboard. It supports wire
 
 ## Installation
 
-There is no application release or installation procedure yet. Once the application and its build tooling are available, installation instructions will be added here.
+Download a release archive (macOS arm64/x86_64, Linux, Windows) from GitHub Releases, or build from source:
 
-For ASUS's current Windows software and device downloads, see the [ROG Falchion support and downloads page](https://rog.asus.com/us/keyboards/keyboards/compact/rog-falchion-model/helpdesk_download/). ASUS currently lists Armoury Crate for Windows 10 (version 1903 or later) and Windows 11.
+```sh
+make dist        # binaries land in dist/
+```
+
+For ASUS's Windows software, see the [ROG Falchion support and downloads page](https://rog.asus.com/us/keyboards/keyboards/compact/rog-falchion-model/helpdesk_download/).
 
 ## Usage and planned capabilities
+
+See [USER-GUIDE.md](USER-GUIDE.md) for usage (`falchion list`, `falchion lighting --effect wave`, or the GUI).
 
 The project is intended to explore configuration options such as:
 
@@ -30,15 +36,34 @@ These are goals for development, not a promise that every feature is supported b
 
 ## Development (local debug)
 
-The application source code and development toolchain have not been added yet, so there are no build or debug commands at this stage. Development setup instructions will be documented here when the project has a runnable implementation.
+Requires Rust stable ([rustup](https://rustup.rs)). On Linux, also install the packages listed in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+```sh
+cargo run -p falchion-cli -- list    # CLI
+cargo run -p falchion-gui            # GUI
+make lint                            # rustfmt + clippy
+```
 
 ## Running unit tests
 
-No test suite or test command exists yet. The project aims to add unit tests alongside implementation, with positive and negative cases and a target of at least 90% code coverage.
+```sh
+make test        # cargo test --workspace --all-targets
+make coverage    # cargo-llvm-cov; fails below 90% line coverage
+```
+
+Tests use `MockProvider`/`MockTransport` and never need hardware.
 
 ## Repository structure
 
-This repository is currently in its initial documentation and planning stage. Application source code, distribution artifacts, and project-specific build or test configuration have not been added yet.
+| Path | Contents |
+|---|---|
+| `src/falchion-core` | Protocol, domain types, `Keyboard`, transport traits, mocks (no I/O) |
+| `src/falchion-hid` | hidapi transport and device discovery |
+| `src/falchion-cli` | `falchion` command-line tool |
+| `src/falchion-gui` | `falchion-gui` desktop app (egui) |
+| `docs/` | [Architecture](docs/ARCHITECTURE.md), [protocol notes](docs/PROTOCOL.md), [development guide](docs/DEVELOPMENT.md) |
+| `.github/workflows` | CI (lint, test matrix, coverage gate) and tagged releases |
+| `dist/` | Packaged release binaries (git-ignored) |
 
 ## Product references
 

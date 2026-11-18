@@ -1,0 +1,14 @@
+[package]
+name = "falchion-hid"
+description = "hidapi transport and device discovery for the ASUS ROG Falchion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+falchion-core.workspace = true
+hidapi.workspace = true
+
+[lints]
+workspace = true

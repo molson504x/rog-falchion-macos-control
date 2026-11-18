@@ -1,0 +1,19 @@
+[package]
+name = "falchion-gui"
+description = "Desktop GUI for the ASUS ROG Falchion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "falchion-gui"
+path = "src/main.rs"
+
+[dependencies]
+eframe.workspace = true
+falchion-core.workspace = true
+falchion-hid.workspace = true
+
+[lints]
+workspace = true

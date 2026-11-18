@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "src/falchion-core",
+    "src/falchion-hid",
+    "src/falchion-cli",
+    "src/falchion-gui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+repository = "https://github.com/molson504x/rog-falchion-macos-control"
+
+[workspace.dependencies]
+falchion-core = { path = "src/falchion-core" }
+falchion-hid = { path = "src/falchion-hid" }
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+eframe = "0.29"
+hidapi = "2.6"
+thiserror = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
