@@ -61,7 +61,7 @@ Tests use `MockProvider`/`MockTransport` and never need hardware.
 | `src/falchion-hid` | hidapi transport and device discovery |
 | `src/falchion-cli` | `falchion` command-line tool |
 | `src/falchion-gui` | `falchion-gui` desktop app (egui) |
-| `docs/` | [Architecture](docs/ARCHITECTURE.md), [protocol notes](docs/PROTOCOL.md), [development guide](docs/DEVELOPMENT.md) |
+| `docs/` | [Architecture](docs/ARCHITECTURE.md), [feature catalog](docs/FEATURES.md), [protocol notes](docs/PROTOCOL.md), [development guide](docs/DEVELOPMENT.md) |
 | `.github/workflows` | CI (lint, test matrix, coverage gate) and tagged releases |
 | `dist/` | Packaged release binaries (git-ignored) |
 
