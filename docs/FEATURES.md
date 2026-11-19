@@ -20,7 +20,7 @@ What Armoury Crate can configure on the ROG Falchion, and how much of each featu
 | Onboard profiles | 5 profiles plus 1 editable default profile (ID 6) | Partial: [save](PROTOCOL.md#commands) `50 55` and [select](PROTOCOL.md#commands-1) `51 00 00 00 <n>` known; reading the active profile is unknown | Placeholder (save) |
 | Profile hotkeys | Fn + A/S/D/F/G switches profile 1–5; the default profile is separate | Handled on the keyboard. The host can watch key presses via the [key-event log](PROTOCOL.md#commands-1) `43` | No |
 | Sync / host-driven lighting | Lighting follows ASUS Aura Sync | [Known](PROTOCOL.md#commands-1) `41 <0\|1>` | No |
-| Wireless | Dongle supported; same protocol as wired | [Known](PROTOCOL.md#device-identification-confirmed-in-openrgb) | Yes |
+| Wireless | Dongle supported; same protocol as wired. The 2.4 GHz model adds an Aura Sync lighting mode (effect 241, brightness only) and a dongle firmware version | [Known](PROTOCOL.md#device-identification-confirmed-in-openrgb) | Yes |
 
 ## Lighting
 
@@ -53,14 +53,14 @@ Factory default: Rainbow wave, 50% brightness, Normal speed, Normal thickness, 7
 
 Any key except **Fn** can be assigned one of:
 
-Single-key remaps use [`51 20 <src> <dst>`](PROTOCOL.md#commands-1) with 16-bit key codes. That command is known, but the table from (row, column) to key code isn't extracted yet. Assignment types beyond a plain key-to-key remap are unknown.
+Single-key remaps use [`51 20 <src> <dst>`](PROTOCOL.md#commands-1) with 16-bit key codes. Keys are addressed by [key ID](PROTOCOL.md#key-ids), and the ID → (row, column) table has been extracted. Which code `51 20` actually sends still needs a hardware test. Assignment types beyond a plain key-to-key remap are unknown.
 
 | Assignment | Options | Protocol |
 |---|---|---|
 | Default | Restore the original key | Partial (`51 20`, src = dst *(?)*) |
 | Keyboard function | One key or a key combination | Partial (`51 20` for one key; combos unknown) |
 | Mouse function | Left button, right button | Unknown |
-| Macro | A recorded macro (see below) | Unknown |
+| Macro | A recorded macro (see below) | Partial: [upload format](PROTOCOL.md#macros) known; binding a key to a macro unknown |
 | Multimedia | Mute, volume up/down, play/pause, previous, next, stop, mic mute | Unknown |
 | Windows shortcut | Close app, switch apps, show desktop, cut, copy, paste | Unknown |
 | Preset text | Types a string of up to 250 characters | Unknown |
@@ -69,7 +69,7 @@ Single-key remaps use [`51 20 <src> <dst>`](PROTOCOL.md#commands-1) with 16-bit 
 
 **Gaming mode:** can block Alt+Tab and Alt+F4. Protocol unknown.
 
-**Macros:** built in Armoury Crate and stored per profile. You can also record them on the keyboard with Fn + Left Alt (press it twice to search). Protocol unknown.
+**Macros:** built in Armoury Crate and stored on the keyboard. You can also record them on the keyboard with Fn + Left Alt (press it twice to search). Upload is [known](PROTOCOL.md#macros): `51 18` selects a slot, then `53` packets carry up to 15 key events each.
 
 ## Touch bar
 
@@ -83,10 +83,11 @@ Single-key remaps use [`51 20 <src> <dst>`](PROTOCOL.md#commands-1) with 16-bit 
 
 | Feature | Options | Protocol |
 |---|---|---|
-| Sleep after idle | 1, 2, 3, 5 or 10 minutes, or Never (default: 3 minutes) | Partial: one of [`51 37`–`3A`](PROTOCOL.md#commands-1) |
-| Low-battery alert and power saving | Alert and enter power saving at 10/20/30/40/50% battery, or Never | Partial: one of [`51 37`–`3A`](PROTOCOL.md#commands-1) |
-| Power-saving mode | On/off plus a mode setting (default on, mode `1`) | Partial: one of [`51 37`–`3A`](PROTOCOL.md#commands-1) |
-| Battery level | Shown in Armoury Crate | Partial: request [`12 01`](PROTOCOL.md#commands-1); reply not decoded |
+| Sleep after idle | 1, 2, 3, 5 or 10 minutes, or Never (default: 3 minutes) | [Known](PROTOCOL.md#commands-1) `51 38` |
+| Low-battery alert and power saving | Alert and enter power saving at 10/20/30/40/50% battery, or Never | [Known](PROTOCOL.md#commands-1) `51 37`; value encoding *(?)* |
+| Power-saving mode | On/off plus a mode setting (default on, mode `1`) | [Known](PROTOCOL.md#commands-1) `51 39` (on/off), `51 3A` (mode) |
+| Battery level / charging | Shown in Armoury Crate | Partial: [`12 01`](PROTOCOL.md#replies) reply has a charging flag; which byte is battery % is unconfirmed |
+| Dongle firmware / connection | 2.4 GHz model shows the dongle version | [Known](PROTOCOL.md#replies) in the `12 00` reply |
 
 Power settings apply to the whole device, not per profile.
 

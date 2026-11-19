@@ -2,7 +2,7 @@
 
 An early-stage project to make it possible to configure the ASUS ROG Falchion keyboard from macOS. ASUS provides Armoury Crate for configuring the keyboard, but its download requirements currently list Windows 10 (version 1903 or later) or Windows 11, not macOS.
 
-**Project status:** scaffolded. A Rust CLI (`falchion`) and GUI (`falchion-gui`) build and are unit-tested, but the keyboard's HID protocol has **not yet been reverse-engineered**, so commands use placeholder packets and are not expected to work on real hardware yet. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
+**Project status:** scaffolded. A Rust CLI (`falchion`) and GUI (`falchion-gui`) build and are unit-tested. Most of the keyboard's HID protocol has now been documented from OpenRGB and from static analysis of Armoury Crate (see [docs/PROTOCOL.md](docs/PROTOCOL.md) and the [feature catalog](docs/FEATURES.md)), but **none of it has been tested on real hardware**. The code still sends placeholder packets, so commands are not expected to work yet.
 
 ## About
 

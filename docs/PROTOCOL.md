@@ -81,10 +81,12 @@ The Falchion uses the shared `AacKbFunction_Base` / `AacKbFunction_Support_RF` /
 
 ### Commands
 
+Command families: `12` = read info, `50` = profile storage, `51` = set, `52` = get, `41`/`43` = mode switches, `53` = macro data.
+
 | Purpose | Data bytes | Notes |
 |---|---|---|
 | Device info | `12 00` | See [Replies](#replies) |
-| Power info (wireless) | `12 01` | Reply is parsed on a second HID interface *(?)*; fields not yet decoded |
+| Power info (wireless) | `12 01` | See [Replies](#replies) |
 | Touch bar info | `12 02` | Reply `data[5]` = current touch bar level |
 | Layout | `12 12` | See [Commands](#commands) |
 | Select profile | `51 00 00 00 <n>` | `n` = profile number *(?: whether 0- or 1-based)* |
@@ -92,20 +94,52 @@ The Falchion uses the shared `AacKbFunction_Base` / `AacKbFunction_Support_RF` /
 | Profile op A | `50 40 00 00 01` | Purpose unknown *(?: reset to default)* |
 | Profile op B | `50 40` | Purpose unknown |
 | Profile op C | `50 61` | Purpose unknown |
-| Remap key | `51 20 <src_lo> <src_hi> <dst_lo> <dst_hi>` | Source and target are 16-bit key codes, little-endian. Armoury Crate looks them up in a table indexed by key `(row, col)`. The table is not yet extracted |
+| Remap key | `51 20 <src_lo> <src_hi> <dst_lo> <dst_hi>` | Two 16-bit key codes, little-endian, looked up by [key ID](#key-ids) *(?: probably `(row << 8) \| col`)* |
+| Choose macro slot | `51 18 02 00 <n>` | Selects macro slot `n` before uploading. Special forms: `51 18 01` (index "1"), `51 18 03` (index "0"), `51 18 04` (index "-1") *(?: meanings)* |
+| Upload macro | `53 <key> <count> <more> <events…>` | See [Macros](#macros) |
 | Touch bar level | `51 0C <lo> <hi> <b>` | 16-bit value plus one extra byte *(?: function, effect mode)* |
 | RGB indicator | `51 0A 00 00 <v>` | *(?: status LED on/off)* |
-| Power setting | `51 <37–3A> 00 00 <v>` | Four sub-commands `37`, `38`, `39`, `3A`. They probably map to sleep time, low-battery level, power saving and power mode, but the order is unknown |
-| Frame / direct mode | `51 90 00 00 <a> <b>` | Mode 1 writes `a`, mode 2 writes `b` *(?)* |
+| Low-battery alert level | `51 37 00 00 <v>` | XML `blinking_lights`. `v` = option ID: 0 Never, 1–5 = 10–50% *(?: raw option ID or percent)* |
+| Sleep timer | `51 38 00 00 <v>` | XML `idle_mode`. Option IDs 0–4 = 1, 2, 3, 5, 10 min; 255 = never |
+| Power saving | `51 39 00 00 <v>` | XML `power_saving` (on/off) |
+| Low-power mode | `51 3A 00 00 <v>` | XML `low_power_mode` |
+| Frame / direct mode | `51 90 00 00 <a> <b>` | Mode 1 writes `a`, mode 2 writes `b` *(?)*. Read back with `52 90` |
 | Aura Sync | `41 <0\|1>` | 1 = enable sync (host-driven lighting) |
-| Key-event log | `43 <0\|1>` | 1 = keyboard reports key presses (used for profile hotkeys). Replies start `43 xx`, with a key bitmap in `data[5..59]` |
+| Key-event log | `43 <0\|1>` | 1 = keyboard reports key presses (used for profile hotkeys) |
 | Set effect | `51 2C <mode> …` | See [Set effect fields](#set-effect-fields) and the notes below |
+
+Armoury Crate's set-function IDs 1 (no-op) and 11 (close handles) send nothing to the device.
+
+### Key IDs
+
+Armoury Crate identifies each key by a bit in a **21-byte key bitmap**: key ID = `byte * 8 + bit`. The settings files name keys `keyfunction_<byte>_<bit>`, and the `43 02` key report uses the same bitmap. A table in the driver maps each key ID to a physical `(row, col)` on a 5 × 15 grid:
+
+```
+        c0  c1  c2  c3  c4  c5  c6  c7  c8  c9  c10 c11 c12 c13 c14
+row 0   31  37  44  51  58  65  72  95 102 109 116 123 130 144 159
+row 1   29  36  43  50  57  64  87  94 101 108 115 122 129 136 158
+row 2   28  35  42  49  56  79  86  93 100 107 114 121 128 151  62
+row 3   27  34  41  48  71  78  85  92  99 106 113 120 150 157 104
+row 4   26  33  40  --  --  --  77  --  --  105 0/112 142 149 156 155
+```
+
+Row 4 is the bottom row (the gaps are the spacebar). Key ID 0 and 112 both map to row 4, column 10 *(?: Fn)*. A second table gives each key a function code, where `0x14` = profile key (high byte = profile number). Which table `51 20` sends is **unconfirmed**. Check `(row << 8) | col` first.
+
+### Macros
+
+1. `51 18 02 00 <slot>` selects the slot.
+2. Events are sent in packets of up to 15: `53 <key> <count> <more>` then `count` × 4 bytes from `data[4]`:
+   - `<key>` = code of the key that triggers the macro (from the key table)
+   - `<more>` = 0 for the first packet, 1 for later ones
+   - each event = `<code> <action> <d0> <d1>`. For normal keys, `action` = 2 for press and 1 for release. Codes `E8`–`E9` and `F0`–`F2` (mouse buttons *(?)*) use a different action encoding. `d0 d1` *(?: delay)*.
+   - The last event's code is replaced with `FF`.
+3. Each packet is acknowledged with a `53` echo.
 
 ### Set effect: differences from OpenRGB
 
 The HAL uses mode numbers 0–7 just as OpenRGB does (Static 0, Breathing 1, Color cycle 2, Reactive 3, Wave 4, Ripple 5, Starry night 6, Quicksand 7). Differences:
 
-- **Speed** (`data[4]`): Armoury Crate's Slow/Normal/Fast levels map to bytes from a per-effect table built into the driver. The values weren't found. Static sends `FF`.
+- **Speed** (`data[4]`): Armoury Crate's Slow/Normal/Fast levels map to bytes stored on the effect object (one set per effect). They're loaded at run time, not stored as constants, so they weren't found. Static sends `FF`.
 - **Brightness** (`data[5]`): level × 25. Same as OpenRGB.
 - **Color mode** (`data[6]`): computed as `1 + …`, not OpenRGB's 0/16/1. Static sends `00`.
 - **Bytes 7–8**: Static and Breathing send `FF FF` where OpenRGB sends `<direction> 02`. Wave sends `data[7]` = direction ID (0–8).
@@ -116,23 +150,25 @@ Test both encodings on hardware before choosing one.
 
 ### Replies
 
-The keyboard replies on the same interface. **The reply echoes the command**: `data[0..1]` = the command bytes that were sent. Armoury Crate treats this echo as the acknowledgement for `51 20`, `51 2C`, `51 18`, `50 55`, `50 40`, `50 11`, `43 xx` and `53 xx`.
+**The reply echoes the command**: `data[0..1]` = the command bytes that were sent. Armoury Crate treats this echo as the acknowledgement for `51 xx`, `50 55`, `50 40`, `50 11`, `41 xx`, `43 xx`, `52 90` and `53 xx`. Armoury Crate reads two HID interfaces: the control interface and a second one *(?: interface 3, used by the dongle path)*. Both parse the same replies.
 
 | Reply | Fields |
 |---|---|
-| `12 00` | `data[4..6]` = firmware version. `data[8..10]` = a second version, probably the dongle *(?)* |
+| `12 00` | `data[4..6]` = keyboard firmware. `data[8..10]` = extra fields. Through the dongle: `data[11]` = connection state (`FF` = no keyboard connected), `data[12..14]` = dongle firmware |
+| `12 01` | Power: `data[4..7]` = four values *(?: battery %, status)*. `data[8]` = 1 while charging. `data[9]` = one more value |
 | `12 02` | `data[5]` = touch bar level |
 | `12 12` | `data[4]`, `data[5]` = layout bytes |
+| `52 90` | `data[4]`, `data[5]` = frame/direct-mode state |
 | `43 00`, `43 01` | Acknowledgement of the key-event log command |
-| `43 02` | Key-state report: bitmap in `data[5..59]` |
+| `43 02` | Key-state report: the 21-byte [key bitmap](#key-ids) starts at `data[5]` |
 
 ## Still unknown
 
-[FEATURES.md](FEATURES.md) tracks every feature. Still missing:
-- The key-code table for `51 20` and the macro upload format
-- Touch bar action assignment (only the level command is known)
-- The meaning of each power sub-command and the `12 01` reply layout
-- The speed-level → byte table, and wave thickness and background color
+[FEATURES.md](FEATURES.md) tracks every feature. Static analysis couldn't settle these; they need hardware tests or a USB capture:
+- Which key table `51 20` uses, and how combos, media keys, shortcuts and text are assigned
+- Touch bar **action** assignment (it's in the SDK's touch panel XML; the HAL only showed the level command)
+- The meaning of each `12 01` power value, and of the `50 40` / `50 61` profile operations
+- The speed-level byte values, wave thickness and background color
 
 ### How to capture
 
@@ -149,4 +185,4 @@ OpenRGB is GPL-2.0-or-later, and this project is MPL-2.0. This page records prot
 
 - OpenRGB `Controllers/AsusAuraUSBController/AsusAuraKeyboardController/`, master branch as of 2026-11-18. Relevant files: `AsusAuraKeyboardController.{h,cpp}`, `AsusAuraKeyboardControllerDetect.cpp`, `RGBController_AsusAuraKeyboard.{h,cpp}`, `AsusAuraKeyboardLayouts.h`. https://gitlab.com/CalcProgrammer1/OpenRGB
 - Original device request: https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/2043
-- ASUS Armoury Crate Full Installation Package 1.4.4.3 (`dlcdnets.asus.com/pub/ASUS/mb/14Utilities/Armoury_Crate_Full_Installation_Package.zip`), studied on 2026-11-18 without running it. Files: `SupersetPackage_HAL` → `AacKbSetup` 1.02.97 → `AacKbHal_x64.dll`; `SupersetPackage_Others` → `KeyboardSDK` 3.00.85 and `HTML/ROG FALCHION(6460)` UI 4.01.08. Only facts are recorded here. No ASUS code or binaries are in this repo.
+- ASUS Armoury Crate Full Installation Package 1.4.4.3 (`dlcdnets.asus.com/pub/ASUS/mb/14Utilities/Armoury_Crate_Full_Installation_Package.zip`), studied on 2026-11-18 without running it. Files: `SupersetPackage_HAL` → `AacKbSetup` 1.02.97 → `AacKbHal_x64.dll`; `SupersetPackage_Others` → `KeyboardSDK` 3.00.85 (`ArmouryKbSDK.dll`, power XML → command mapping) and `HTML/ROG FALCHION(6460)` UI 4.01.08. Analyzed with radare2 and Ghidra (headless decompiler). Only facts are recorded here. No ASUS code or binaries are in this repo.
