@@ -24,6 +24,18 @@ Cargo build output goes to `target/`. Packaged binaries go to `dist/`. Both are 
 
 - **macOS `ld: tapi error: malformed file ... unknown architecture arm64e.x1`**: a newer (often beta) SDK is installed alongside older Command Line Tools, and `xcrun` picks the newest one. Point builds at the default SDK with `export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk` (add it to `~/.zshrc`), or remove the stray SDK.
 
+## Probing the keyboard
+
+`falchion raw` sends one 64-byte report and prints every reply that arrives before the timeout. Replies that echo the command are tagged `(echo)`; `FF AA` means the keyboard rejected it.
+
+```sh
+falchion raw 12 00                 # device info (read-only)
+falchion raw 51 38 00 00 02        # set the sleep timer (changes the keyboard)
+falchion raw 12 01 --timeout 600 --max-replies 2
+```
+
+Read commands (`12 xx`, `52 xx`) are safe. Set commands change stored settings, so read the current value first and restore it afterwards. Effect changes (`51 2C`) are not undone by re-selecting the profile, and without `50 55` a power cycle can bring back an unexpected earlier effect, so save (`50 55`) once the lighting is back how you want it. In zsh, quote multi-byte arguments (`falchion raw "$cmd"`): unquoted variables are not word-split. Don't send firmware, bootloader or key-remap commands while experimenting. Record every result in [PROTOCOL.md](PROTOCOL.md#hardware-test-results).
+
 ## Rules
 
 - Every change ships with positive **and** negative unit tests. Coverage must stay at or above 90% (CI enforces this).

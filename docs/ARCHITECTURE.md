@@ -28,7 +28,7 @@ falchion-gui ─┘                 └─> mock (in falchion-core, tests)
 
 ## Adding a feature (e.g. macros, key remap)
 
-1. Capture and document the packets in [PROTOCOL.md](PROTOCOL.md).
+1. Find the packets (USB capture, or probe the keyboard with `falchion raw`: see [DEVELOPMENT.md](DEVELOPMENT.md#probing-the-keyboard)) and document them in [PROTOCOL.md](PROTOCOL.md). Only build on commands marked ✓ (tested on hardware).
 2. Add types plus a `Report::...` constructor in `falchion-core`, and a `Keyboard` method. Test both success and failure paths.
 3. Expose it in the CLI (`falchion-cli/src/lib.rs`) and the GUI (add a `worker::Request` variant, handle the response in `state.rs`, then add the controls in `app.rs`).
 4. Update [USER-GUIDE.md](../USER-GUIDE.md).

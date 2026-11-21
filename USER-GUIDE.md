@@ -1,7 +1,8 @@
 # User Guide
 
-> **Early development.** The keyboard protocol has not been verified on real
-> hardware yet, so commands may have no effect. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
+> **Early development.** Parts of the keyboard protocol have been confirmed on a real
+> keyboard, but `falchion lighting`, `info` and the GUI still send placeholder packets,
+> so they may have no effect yet. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ROG Falchion Control ships two programs:
 
@@ -36,6 +37,7 @@ You should see something like `ROG Falchion (wired) 0b05:193c at ...`.
 | Leftward rainbow wave, keep after power-off | `falchion lighting --effect wave --direction left --save` |
 | Lights off | `falchion lighting --effect off` |
 | Help | `falchion --help`, `falchion lighting --help` |
+| Send a raw report (developers) | `falchion raw 12 00` (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#probing-the-keyboard)) |
 
 Lighting options:
 
