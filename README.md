@@ -2,7 +2,7 @@
 
 An early-stage project to make it possible to configure the ASUS ROG Falchion keyboard from macOS. ASUS provides Armoury Crate for configuring the keyboard, but its download requirements currently list Windows 10 (version 1903 or later) or Windows 11, not macOS.
 
-**Project status:** scaffolded. A Rust CLI (`falchion`) and GUI (`falchion-gui`) build and are unit-tested. Most of the keyboard's HID protocol has now been documented from OpenRGB and from static analysis of Armoury Crate (see [docs/PROTOCOL.md](docs/PROTOCOL.md) and the [feature catalog](docs/FEATURES.md)), and the core commands (device info, battery, profiles, power settings, all lighting effects, per-key colour and saving to the keyboard) have been [confirmed on a real keyboard](docs/PROTOCOL.md#hardware-test-results), wired and wireless. The `lighting`, `info` and GUI code still sends placeholder packets, so those commands are not expected to work yet. `falchion raw` sends verified bytes directly.
+**Project status:** scaffolded. A Rust CLI (`falchion`) and GUI (`falchion-gui`) build and are unit-tested. Most of the keyboard's HID protocol has now been documented from OpenRGB and from static analysis of Armoury Crate (see [docs/PROTOCOL.md](docs/PROTOCOL.md) and the [feature catalog](docs/FEATURES.md)), and the core commands (device info, battery, profiles, power settings, all lighting effects, per-key colour and saving to the keyboard) have been [confirmed on a real keyboard](docs/PROTOCOL.md#hardware-test-results), wired and wireless. `falchion info`, `falchion lighting` and the GUI's lighting controls (all ten effects with their colour, speed, direction, thickness, background and brightness options) now use the verified protocol. Profiles, power settings, per-key colour and key remapping are not in the app yet; `falchion raw` sends any verified bytes directly.
 
 ## About
 
@@ -22,7 +22,7 @@ For ASUS's Windows software, see the [ROG Falchion support and downloads page](h
 
 ## Usage and planned capabilities
 
-See [USER-GUIDE.md](USER-GUIDE.md) for usage (`falchion list`, `falchion lighting --effect wave`, or the GUI).
+See [USER-GUIDE.md](USER-GUIDE.md) for usage (`falchion list`, `falchion lighting --effect wave --direction left`, or the GUI).
 
 The project is intended to explore configuration options such as:
 
@@ -52,6 +52,15 @@ make coverage    # cargo-llvm-cov; fails below 90% line coverage
 ```
 
 Tests use `MockProvider`/`MockTransport` and never need hardware.
+
+## Running hardware (integration) tests
+
+```sh
+make hw-test                                  # every lighting case
+FALCHION_CASES=wave,ripple make hw-test       # only matching cases
+```
+
+Each case changes the lighting, asks you to confirm what you see (`y`/`n`), then restores a baseline. Nothing is saved to the keyboard. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#hardware-tests).
 
 ## Repository structure
 

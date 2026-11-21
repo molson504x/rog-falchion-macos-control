@@ -9,12 +9,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use falchion_core::{DeviceInfo, DeviceProvider, Keyboard, LightingSettings, Result};
+use falchion_core::{DeviceInfo, DeviceProvider, DeviceStatus, Keyboard, LightingSettings, Result};
 
 /// Work the GUI asks the worker to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-    /// Re-scan for keyboards.
+    /// Re-scan for keyboards and read the first one's status.
     Refresh,
     /// Apply lighting to the first keyboard, optionally saving it.
     Apply {
@@ -29,7 +29,12 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Response {
     /// Outcome of [`Request::Refresh`].
-    Devices(Result<Vec<DeviceInfo>>),
+    Devices {
+        /// Keyboards found.
+        devices: Result<Vec<DeviceInfo>>,
+        /// Status of the first keyboard; `None` when none was found.
+        status: Option<Result<DeviceStatus>>,
+    },
     /// Outcome of [`Request::Apply`].
     Applied {
         /// Whether it succeeded.
@@ -42,12 +47,22 @@ pub enum Response {
 /// Executes one request against `provider`. Runs on the worker thread.
 pub fn handle_request<P: DeviceProvider>(provider: &P, request: Request) -> Response {
     match request {
-        Request::Refresh => Response::Devices(provider.list()),
+        Request::Refresh => {
+            let devices = provider.list();
+            let found = matches!(&devices, Ok(list) if !list.is_empty());
+            let status = found.then(|| read_status(provider));
+            Response::Devices { devices, status }
+        }
         Request::Apply { settings, save } => {
             let result = apply(provider, &settings, save);
             Response::Applied { result, save }
         }
     }
+}
+
+fn read_status<P: DeviceProvider>(provider: &P) -> Result<DeviceStatus> {
+    let (_, transport) = provider.open_first()?;
+    Keyboard::new(transport).status()
 }
 
 fn apply<P: DeviceProvider>(provider: &P, settings: &LightingSettings, save: bool) -> Result<()> {
@@ -116,9 +131,8 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use falchion_core::protocol::{Command as Wire, Report};
     use falchion_core::{Error, MockProvider};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
 
     const WAIT: Duration = Duration::from_secs(5);
 
@@ -129,20 +143,56 @@ mod tests {
         }
     }
 
-    #[test]
-    fn refresh_lists_devices() {
-        let response = handle_request(&MockProvider::with_device(), Request::Refresh);
-        assert!(matches!(response, Response::Devices(Ok(d)) if d.len() == 1));
+    fn info_reply(effect: u8) -> Report {
+        Report::new(Wire::DeviceInfo, &[0, 0, 0x13, 0x61, 0x31, 0, 6, effect, 3]).unwrap()
     }
 
     #[test]
-    fn refresh_propagates_list_error() {
+    fn refresh_lists_devices_and_reads_status() {
+        let provider = MockProvider::with_device();
+        provider.transport.queue_response(&info_reply(4));
+        let response = handle_request(&provider, Request::Refresh);
+        let Response::Devices { devices, status } = response else {
+            panic!("unexpected {response:?}");
+        };
+        assert_eq!(devices.unwrap().len(), 1);
+        let status = status.unwrap().unwrap();
+        assert_eq!((status.profile, status.effect_code), (3, 4));
+    }
+
+    #[test]
+    fn refresh_reports_status_errors_separately() {
+        let provider = MockProvider {
+            transport: falchion_core::MockTransport::new(),
+            ..MockProvider::with_device()
+        };
+        let response = handle_request(&provider, Request::Refresh);
+        let expected = Response::Devices {
+            devices: Ok(provider.devices.clone()),
+            status: Some(Err(Error::Timeout)),
+        };
+        assert_eq!(response, expected);
+    }
+
+    #[test]
+    fn refresh_skips_status_without_devices_or_on_error() {
+        let response = handle_request(&MockProvider::default(), Request::Refresh);
+        let expected = Response::Devices {
+            devices: Ok(vec![]),
+            status: None,
+        };
+        assert_eq!(response, expected);
+
         let provider = MockProvider {
             list_error: Some(Error::Timeout),
             ..MockProvider::default()
         };
         let response = handle_request(&provider, Request::Refresh);
-        assert_eq!(response, Response::Devices(Err(Error::Timeout)));
+        let expected = Response::Devices {
+            devices: Err(Error::Timeout),
+            status: None,
+        };
+        assert_eq!(response, expected);
     }
 
     #[test]
@@ -154,10 +204,19 @@ mod tests {
             save: false,
         };
         assert_eq!(response, expected);
-        assert_eq!(provider.transport.written().len(), 1);
+        let commands = |p: &MockProvider| -> Vec<[u8; 2]> {
+            let written = p.transport.written().into_iter();
+            written.map(|raw| [raw[0], raw[1]]).collect()
+        };
+        assert_eq!(commands(&provider), [Wire::SetEffect.bytes()]);
 
         handle_request(&provider, apply_request(true));
-        assert_eq!(provider.transport.written().len(), 3);
+        let expected = [
+            Wire::SetEffect.bytes(),
+            Wire::SetEffect.bytes(),
+            Wire::Save.bytes(),
+        ];
+        assert_eq!(commands(&provider), expected);
     }
 
     #[test]
@@ -180,16 +239,16 @@ mod tests {
 
     #[test]
     fn worker_runs_requests_off_thread_and_notifies() {
-        let notified = Arc::new(AtomicUsize::new(0));
-        let counter = Arc::clone(&notified);
+        let (notify_tx, notified) = mpsc::channel();
         let notify = move || {
-            counter.fetch_add(1, Ordering::SeqCst);
+            notify_tx.send(()).expect("notification receiver");
         };
         let worker = Worker::spawn(MockProvider::with_device, notify);
         assert!(worker.send(Request::Refresh));
         let response = worker.recv_timeout(WAIT).expect("response");
-        assert!(matches!(response, Response::Devices(Ok(_))));
-        assert_eq!(notified.load(Ordering::SeqCst), 1);
+        assert!(matches!(response, Response::Devices { devices: Ok(_), .. }));
+        notified.recv_timeout(WAIT).expect("notification");
+        assert_eq!(notified.try_recv(), Err(mpsc::TryRecvError::Empty));
     }
 
     #[test]

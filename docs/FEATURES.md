@@ -10,15 +10,15 @@ What Armoury Crate can configure on the ROG Falchion, and how much of each featu
 - **Partial** means some of it is known, with differences noted.
 - **Unknown** means the bytes still need to be found (see [Open research](#open-research)).
 
-**App column:** **Placeholder** means the CLI/GUI have the feature but send placeholder packets. **No** means it isn't built yet.
+**App column:** **Yes** means the CLI and GUI support it with verified bytes. **No** means it isn't built yet.
 
 ## Device and profiles
 
 | Feature | Armoury Crate behavior | Protocol | App |
 |---|---|---|---|
 | Device identity | VID `0x0B05`, PID `0x193C` wired / `0x193E` dongle | [Known](PROTOCOL.md#device-identification-confirmed-in-openrgb) | Yes |
-| Firmware version | Shown as "Keyboard version"; the 2.4 GHz model also shows the dongle version | ✓ [Known](PROTOCOL.md#replies) (`12 00`) | Placeholder |
-| Onboard profiles | 5 profiles plus 1 editable default profile (ID 6) | ✓ [select](PROTOCOL.md#commands-1) `51 00 00 00 <n>` (1–6; 0 = query the active profile), read the active profile (`12 00` byte 10), ✓ [save](PROTOCOL.md#commands) `50 55` | Placeholder (save) |
+| Firmware version | Shown as "Keyboard version"; the 2.4 GHz model also shows the dongle version | ✓ [Known](PROTOCOL.md#replies) (`12 00`) | Yes (`falchion info`, GUI header) |
+| Onboard profiles | 5 profiles plus 1 editable default profile (ID 6) | ✓ [select](PROTOCOL.md#commands-1) `51 00 00 00 <n>` (1–6; 0 = query the active profile), read the active profile (`12 00` byte 10), ✓ [save](PROTOCOL.md#commands) `50 55` | Save: Yes. Read active profile: Yes. Select: No |
 | Profile hotkeys | Fn + A/S/D/F/G switches profile 1–5; the default profile is separate | Handled on the keyboard. The host can detect a switch by polling the active profile (`12 00` byte 10, or `51 00 00 00 00`). The [key-event log](PROTOCOL.md#commands-1) `43` never reports | No |
 | Sync / host-driven lighting | Lighting follows ASUS Aura Sync | Partial: `41 <0\|1>` is accepted (other values → `FF AA`), but no visible effect was seen. Per-key colour works without it | No |
 | Wireless | ✓ Dongle supported; same protocol as wired (tested). The 2.4 GHz model adds an Aura Sync lighting mode (effect 241, brightness only) and a dongle firmware version | [Known](PROTOCOL.md#device-identification-confirmed-in-openrgb) | Yes |
@@ -26,6 +26,8 @@ What Armoury Crate can configure on the ROG Falchion, and how much of each featu
 ## Lighting
 
 Common controls: **brightness** 0/25/50/75/100% (✓ [known](PROTOCOL.md#set-effect-fields)), **speed** Slow/Normal/Fast (✓ raw byte, lower = faster; Armoury Crate's exact three values unknown).
+
+All ten effects and every control below are in the CLI (`falchion lighting`) and GUI. Per-key direct colour is not yet.
 
 | # | Effect | Color options | Extra controls | Protocol |
 |---|---|---|---|---|

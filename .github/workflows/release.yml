@@ -17,23 +17,22 @@ jobs:
       matrix:
         include:
           - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: macos-latest, target: x86_64-apple-darwin }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, exe: .exe }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libudev-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+          build-essential pkg-config libudev-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
           libx11-dev libxcursor-dev libxrandr-dev libxi-dev
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
       - run: cargo build --workspace --release --target ${{ matrix.target }}
-      - name: Package into dist/
+      - name: Prepare distribution
         shell: bash
         run: |
           name="falchion-${GITHUB_REF_NAME}-${{ matrix.target }}"
@@ -42,15 +41,22 @@ jobs:
             cp "target/${{ matrix.target }}/release/${bin}${{ matrix.exe }}" "dist/$name/"
           done
           cp README.md USER-GUIDE.md LICENSE "dist/$name/"
-          cd dist
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$name.zip" "$name"
-          else
-            tar czf "$name.tar.gz" "$name"
-          fi
-      - uses: actions/upload-artifact@v4
+      - name: Archive distribution (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          name="falchion-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+      - name: Archive distribution (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = "falchion-${env:GITHUB_REF_NAME}-${{ matrix.target }}"
+          Compress-Archive -LiteralPath "dist/$name" -DestinationPath "dist/$name.zip"
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ matrix.target }}
+          if-no-files-found: error
           path: |
             dist/*.tar.gz
             dist/*.zip
@@ -59,11 +65,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3.0.4
         with:
           files: dist/*
+          fail_on_unmatched_files: true
           generate_release_notes: true

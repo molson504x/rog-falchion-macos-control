@@ -18,7 +18,9 @@ pub use color::Rgb;
 pub use device::{ConnectionKind, DeviceInfo, KnownDevice};
 pub use error::{Error, Result};
 pub use keyboard::Keyboard;
-pub use lighting::{Brightness, Direction, Effect, LightingSettings, Speed};
+pub use lighting::{
+    Brightness, ColorMode, Direction, Effect, LightingSettings, Speed, Thickness, RAINBOW,
+};
 pub use mock::{MockProvider, MockTransport};
-pub use protocol::{RawReport, Report, REPORT_LEN};
+pub use protocol::{DeviceStatus, RawReport, Report, REPORT_LEN};
 pub use transport::{DeviceProvider, Transport};

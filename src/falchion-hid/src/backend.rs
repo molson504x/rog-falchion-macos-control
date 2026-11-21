@@ -29,7 +29,7 @@ pub struct HidTransport {
 
 impl Transport for HidTransport {
     fn write(&mut self, report: &RawReport) -> Result<()> {
-        // hidapi expects the report ID first; 0x00 = unnumbered. PLACEHOLDER.
+        // hidapi expects the report ID first; 0x00 = unnumbered (verified).
         let mut buf = [0u8; REPORT_LEN + 1];
         buf[1..].copy_from_slice(report);
         self.device.write(&buf).map_err(transport_error)?;

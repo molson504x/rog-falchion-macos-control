@@ -2,8 +2,8 @@
 
 > **Status:** documented from OpenRGB's working Falchion driver and from static analysis of
 > Armoury Crate's keyboard HAL (see [Sources](#sources)). Entries marked ✓ were
-> [tested on a real keyboard](#hardware-test-results) (wired, firmware 13.61.31). The code in `falchion-core`
-> still uses the **old placeholder values** until it is updated to match this page.
+> [tested on a real keyboard](#hardware-test-results) (wired, firmware 13.61.31). `falchion-core`
+> implements device info (`12 00`), set effect (`51 2C`) and save (`50 55`) from this page.
 
 OpenRGB uses one controller for many ASUS Aura keyboards (Strix Scope, Azoth, TUF K-series).
 The Falchion follows the generic "per-LED keyboard" path. It has no Falchion-only quirks
@@ -43,17 +43,17 @@ OpenRGB opens the device by matching both the interface number and the usage pag
 | Field | Values |
 |---|---|
 | `mode` | 0 Static, 1 Breathing, 2 Spectrum cycle, 3 Reactive, 4 Rainbow wave, 5 Ripple, 6 Starry night, 7 Quicksand, 8 Current, 9 Rain drop. (✓ **15 = Direct**: send this effect packet, then colour keys with `C0 81`. OpenRGB skips the packet, but the Falchion needs it.) |
-| `speed` | Raw byte. **Lower is faster**: 255 is slowest, 0 is fastest, and the default is 30. |
+| `speed` | Raw byte. **Lower is faster**: 255 is slowest, 0 is fastest, and the default is 30. The app's five levels (slowest → fastest) send `FF A0 60 30 10`; these are our own choice, not Armoury Crate's values. |
 | `brightness` ✓ | Level 0–4 × 25, so 0, 25, 50, 75 or 100. There is no "off" mode: brightness 0 turns all keys off (verified). |
-| `color_mode` | 0 = single color, 16 = two colors (Breathing, Reactive, Starry night, Current, Rain drop), 1 = random |
+| `color_mode` | 0 = single color (also used for gradients), 16 = two colors (Breathing, Reactive, Starry night, Current, Rain drop), 1 = random (those five plus Ripple and Quicksand) |
 | `direction` ✓ | Wave: **0** left→right, **1** diagonal top-left→bottom-right, **2** top→bottom, **3** diagonal top-right→bottom-left, **4** right→left, **5** diagonal bottom-right→top-left, **6** bottom→top, **7** diagonal bottom-left→top-right, **8** centre-out (from the J/K column). OpenRGB's "Vertical 1" is wrong: 1 is a diagonal. Quicksand uses 2 and 6 only. Otherwise 0. |
-| `size` (byte 8) ✓ | OpenRGB always sends `02`. It is the band **thickness**: 0 = slim (about 1–2 keys), 1 = normal, 2 = thick (about 4–5 keys). On Starry Night it sets **density** (0 = fewer keys lit). |
+| `size` (byte 8) ✓ | OpenRGB always sends `02` (the app does too for effects that ignore it). It is the band **thickness**: 0 = slim (about 1–2 keys), 1 = normal, 2 = thick (about 4–5 keys). On Starry Night it sets **density** (0 = fewer keys lit). |
 
 **Color layout:**
 - Non-wave modes: up to 3 colors as `R G B` triples starting at `data[9]` (slots 1–3 at `data[9]`, `data[12]`, `data[15]`).
   - ✓ **Background colour = slot 3** (`data[15..17]`) for Starry night, Current and Rain drop. With colour mode 0, slot 2 is ignored; leave slot 3 at zero for no background.
   - ✓ **Quicksand** takes 6 `R G B` triples from `data[9]`, one per row: colour 1 = top row. Direction `06` = fills from the bottom, `02` = from the top.
-- Wave and Ripple: `data[9]` = number of colors (1–7), then 4 bytes per color starting at `data[10]`: `<position %> R G B`. Position = `100 / count × (i+1)`.
+- Wave and Ripple: `data[9]` = number of colors (1–7), then 4 bytes per color starting at `data[10]`: `<position %> R G B`. Position = `100 × (i+1) / count`, so the last stop is 100 (the 3-colour test used `21 42 64`).
 
 Color limits per mode (from OpenRGB): Static 1, Breathing 1–2, Wave 1–7, Reactive 1–2, Ripple 1–8, Starry night 1–3, Quicksand 6, Current 1–3, Rain drop 1–3.
 
@@ -158,6 +158,8 @@ Byte 8 is the wave/ripple **thickness**, and colour slot 3 is the **background**
 **Without `50 55`, what survives a power cycle is unpredictable.** Re-selecting the profile did not undo an effect change. But after switching to the dongle (which power-cycles the keyboard), it came back with an effect from the middle of the test session: neither the original nor the last one sent. The keyboard seems to commit lighting to flash only at some points. **Always send `50 55` after setting lighting you want to keep**: set + `50 55` was confirmed to survive a power cycle.
 
 ### Replies
+
+The app sends one command at a time and waits up to 1500 ms for its echo, skipping up to 8 unrelated reports; `FF AA` is reported as a rejection.
 
 **The reply echoes the command**: `data[0..1]` = the command bytes that were sent. Armoury Crate treats this echo as the acknowledgement for `51 xx`, `50 55`, `50 40`, `50 11`, `41 xx`, `43 xx`, `52 90` and `53 xx`. Armoury Crate reads two HID interfaces: the control interface and a second one *(?: interface 3, used by the dongle path)*. Both parse the same replies.
 

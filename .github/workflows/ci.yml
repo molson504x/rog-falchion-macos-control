@@ -14,21 +14,21 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # System libraries needed by hidapi (libudev) and eframe (X11/Wayland/GL) on Linux.
+  # Build tools and libraries needed by hidapi and eframe on Linux.
   LINUX_DEPS: >-
-    libudev-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+    build-essential pkg-config libudev-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
     libx11-dev libxcursor-dev libxrandr-dev libxi-dev
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -39,23 +39,23 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
       - run: cargo test --workspace --all-targets
 
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
       - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
+      - uses: Swatinem/rust-cache@v2.9.3
+      - uses: taiki-e/install-action@v2.90.4
         with:
           tool: cargo-llvm-cov
       # Keep the ignore regex in sync with COV_IGNORE in the Makefile.
@@ -64,7 +64,7 @@ jobs:
           --ignore-filename-regex '(main|app|backend)\.rs$'
           --fail-under-lines 90
           --lcov --output-path lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-lcov
           path: lcov.info

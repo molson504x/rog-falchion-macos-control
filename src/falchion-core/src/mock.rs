@@ -17,12 +17,15 @@ struct MockState {
     written: Vec<RawReport>,
     responses: VecDeque<Result<RawReport>>,
     write_error: Option<Error>,
+    echo: bool,
 }
 
 /// A transport that records writes and replays queued responses.
 ///
 /// Clones share state, so a test can keep a handle while code under test owns
-/// another. Reading with nothing queued returns [`Error::Timeout`].
+/// another. Reading with nothing queued returns [`Error::Timeout`]. An
+/// [echoing](MockTransport::echoing) mock also queues an echo of every write,
+/// like the real keyboard's acknowledgement.
 #[derive(Debug, Clone, Default)]
 pub struct MockTransport {
     state: Rc<RefCell<MockState>>,
@@ -32,6 +35,13 @@ impl MockTransport {
     /// Creates an empty mock.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a mock that acknowledges every write by echoing it.
+    pub fn echoing() -> Self {
+        let mock = Self::default();
+        mock.state.borrow_mut().echo = true;
+        mock
     }
 
     /// Queues `report` to be returned by the next unanswered read.
@@ -71,6 +81,9 @@ impl Transport for MockTransport {
             return Err(err);
         }
         state.written.push(*report);
+        if state.echo {
+            state.responses.push_back(Ok(*report));
+        }
         Ok(())
     }
 
@@ -94,11 +107,13 @@ pub struct MockProvider {
 }
 
 impl MockProvider {
-    /// A provider with one wired Falchion attached.
+    /// A provider with one wired Falchion attached that acknowledges every
+    /// command (see [`MockTransport::echoing`]).
     pub fn with_device() -> Self {
         let device = DeviceInfo::from_known(&KNOWN_DEVICES[0], "mock://0", None);
         Self {
             devices: vec![device],
+            transport: MockTransport::echoing(),
             ..Self::default()
         }
     }
@@ -140,12 +155,21 @@ mod tests {
         let mut mock = MockTransport::new();
         let raw = Report::save().encode();
         mock.queue_raw(raw);
-        mock.queue_response(&Report::get_firmware_version());
+        mock.queue_response(&Report::device_info());
         mock.queue_error(Error::Transport("x".into()));
         assert_eq!(mock.read(0), Ok(raw));
-        assert_eq!(mock.read(0).map(|r| r[1]), Ok(0x82));
+        assert_eq!(mock.read(0).map(|r| r[0]), Ok(0x12));
         assert_eq!(mock.read(0), Err(Error::Transport("x".into())));
         assert_eq!(mock.read(0), Err(Error::Timeout));
+    }
+
+    #[test]
+    fn echoing_mock_acknowledges_writes() {
+        let mut mock = MockTransport::echoing();
+        let raw = Report::save().encode();
+        mock.write(&raw).unwrap();
+        assert_eq!(mock.read(0), Ok(raw));
+        assert_eq!(MockTransport::new().read(0), Err(Error::Timeout));
     }
 
     #[test]

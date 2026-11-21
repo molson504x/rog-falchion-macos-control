@@ -32,6 +32,14 @@ pub enum Error {
         max: u8,
     },
 
+    /// Lighting settings use an option the chosen effect does not support.
+    #[error("invalid lighting settings: {0}")]
+    InvalidSettings(String),
+
+    /// The keyboard answered a command with `FF AA` (not supported).
+    #[error("the keyboard rejected command {0}")]
+    Rejected(String),
+
     /// A report payload is larger than one report can carry.
     #[error("payload of {len} bytes exceeds maximum of {max}")]
     PayloadTooLong {
@@ -86,6 +94,8 @@ mod tests {
             (Error::Transport("usb".into()), "usb"),
             (Error::MalformedReport("bad".into()), "bad"),
             (Error::InvalidColor("#zz".into()), "'#zz'"),
+            (Error::InvalidSettings("no colors".into()), "no colors"),
+            (Error::Rejected("51 2C".into()), "rejected command 51 2C"),
         ];
         for (err, needle) in cases {
             assert!(err.to_string().contains(needle), "{err}");

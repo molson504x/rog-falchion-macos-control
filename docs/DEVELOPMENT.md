@@ -4,7 +4,7 @@
 
 - Rust stable via [rustup](https://rustup.rs). `rust-toolchain.toml` selects the toolchain and components automatically.
 - Coverage: `cargo install cargo-llvm-cov`.
-- Linux only: `libudev-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev`.
+- Linux only: `build-essential pkg-config libudev-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev`.
 
 ## Commands
 
@@ -12,6 +12,7 @@
 |---|---|
 | Build | `make build` |
 | Test | `make test` |
+| Hardware tests (interactive) | `make hw-test` (see [below](#hardware-tests)) |
 | Format / lint | `make fmt` / `make lint` |
 | Coverage (fails under 90% lines) | `make coverage` (`make coverage-html` opens a report) |
 | Run CLI | `make run-cli ARGS="list"` or `cargo run -p falchion-cli -- list` |
@@ -23,6 +24,16 @@ Cargo build output goes to `target/`. Packaged binaries go to `dist/`. Both are 
 ## Troubleshooting
 
 - **macOS `ld: tapi error: malformed file ... unknown architecture arm64e.x1`**: a newer (often beta) SDK is installed alongside older Command Line Tools, and `xcrun` picks the newest one. Point builds at the default SDK with `export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk` (add it to `~/.zshrc`), or remove the stray SDK.
+
+## Hardware tests
+
+`make hw-test` runs `src/falchion-cli/tests/hardware_lighting.rs`, which is `#[ignore]`d by `cargo test`. It needs a connected keyboard and someone watching it. For each case in `hwtest::lighting_cases()` it applies the setting, prints what you should see, asks `y`/`n`, then restores the baseline. A `n` or a send error fails that case; the run fails if any case fails. A final question checks the keyboard looks as it did before.
+
+- `FALCHION_CASES=wave,starry` runs only cases whose names contain a term.
+- `FALCHION_BASELINE="--effect static --color red --brightness 4"` sets what is restored, in `falchion lighting` syntax. The keyboard can't report its colours, so without it the baseline is the active effect (read with `12 00`) with default options at 50% brightness.
+- Nothing is saved (`50 55` is never sent). If the baseline was wrong, re-apply your usual lighting, or switch the keyboard off and on to reload its saved profile.
+
+New features must add cases here. Keep the runner logic in `hwtest.rs` (unit-tested with `MockProvider` and a scripted `Tester`).
 
 ## Probing the keyboard
 
@@ -49,4 +60,5 @@ Read commands (`12 xx`, `52 xx`) are safe. Set commands change stored settings, 
 ## CI / release
 
 - `.github/workflows/ci.yml` runs fmt, clippy (`-D warnings`), tests on macOS/Linux/Windows, and the coverage gate.
-- `.github/workflows/release.yml` runs on `v*` tags. It builds for macOS (arm64 and x86_64), Linux and Windows, packages into `dist/`, and publishes a GitHub Release.
+- `.github/workflows/release.yml` runs on `v*` tags. It builds for macOS (arm64 and x86_64), Linux and Windows, packages into `dist/` (PowerShell ZIP on Windows, tar.gz elsewhere), and publishes a GitHub Release.
+- Dependabot delays GitHub Actions version updates by seven days; security updates are not delayed. Regenerate `.github/workflows/actions.lock` with `gh actions-lock` after changing action references.

@@ -1,4 +1,4 @@
-//! RGB color type and hex parsing.
+//! RGB color type with hex and name parsing.
 
 use std::fmt;
 use std::str::FromStr;
@@ -16,9 +16,42 @@ pub struct Rgb {
     pub b: u8,
 }
 
+/// Color names accepted by [`Rgb::from_str`], in addition to hex.
+pub const NAMED_COLORS: &[(&str, Rgb)] = &[
+    ("black", Rgb::BLACK),
+    ("white", Rgb::WHITE),
+    ("red", Rgb::RED),
+    ("orange", Rgb::ORANGE),
+    ("yellow", Rgb::YELLOW),
+    ("green", Rgb::GREEN),
+    ("cyan", Rgb::CYAN),
+    ("blue", Rgb::BLUE),
+    ("purple", Rgb::PURPLE),
+    ("magenta", Rgb::MAGENTA),
+    ("pink", Rgb::new(0xff, 0x40, 0x80)),
+];
+
 impl Rgb {
-    /// White (`#ffffff`).
+    /// `#000000`.
+    pub const BLACK: Rgb = Rgb::new(0, 0, 0);
+    /// `#ffffff`.
     pub const WHITE: Rgb = Rgb::new(0xff, 0xff, 0xff);
+    /// `#ff0000`.
+    pub const RED: Rgb = Rgb::new(0xff, 0, 0);
+    /// `#ff8000`.
+    pub const ORANGE: Rgb = Rgb::new(0xff, 0x80, 0);
+    /// `#ffff00`.
+    pub const YELLOW: Rgb = Rgb::new(0xff, 0xff, 0);
+    /// `#00ff00`.
+    pub const GREEN: Rgb = Rgb::new(0, 0xff, 0);
+    /// `#00ffff`.
+    pub const CYAN: Rgb = Rgb::new(0, 0xff, 0xff);
+    /// `#0000ff`.
+    pub const BLUE: Rgb = Rgb::new(0, 0, 0xff);
+    /// `#8000ff`.
+    pub const PURPLE: Rgb = Rgb::new(0x80, 0, 0xff);
+    /// `#ff00ff`.
+    pub const MAGENTA: Rgb = Rgb::new(0xff, 0, 0xff);
 
     /// Creates a color from its channels.
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
@@ -40,10 +73,15 @@ impl From<[u8; 3]> for Rgb {
 impl FromStr for Rgb {
     type Err = Error;
 
-    /// Parses `#rrggbb` or `rrggbb`, case-insensitively.
+    /// Parses `#rrggbb`, `rrggbb` or a name from [`NAMED_COLORS`],
+    /// case-insensitively.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let invalid = || Error::InvalidColor(s.to_string());
         let trimmed = s.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if let Some((_, color)) = NAMED_COLORS.iter().find(|(name, _)| *name == lower) {
+            return Ok(*color);
+        }
         let hex = trimmed.strip_prefix('#').unwrap_or(trimmed).as_bytes();
         if hex.len() != 6 {
             return Err(invalid());
@@ -78,6 +116,21 @@ mod tests {
         assert_eq!("#ff8800".parse(), Ok(Rgb::new(0xff, 0x88, 0x00)));
         assert_eq!("00ff7F".parse(), Ok(Rgb::new(0x00, 0xff, 0x7f)));
         assert_eq!("  #000000 ".parse(), Ok(Rgb::default()));
+    }
+
+    #[test]
+    fn parses_names_case_insensitively() {
+        assert_eq!("red".parse(), Ok(Rgb::RED));
+        assert_eq!(" Blue ".parse(), Ok(Rgb::BLUE));
+        for (name, color) in NAMED_COLORS {
+            assert_eq!(name.parse(), Ok(*color));
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_names() {
+        let err = "teal-ish".parse::<Rgb>().unwrap_err();
+        assert_eq!(err, Error::InvalidColor("teal-ish".into()));
     }
 
     #[test]

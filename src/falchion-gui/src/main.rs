@@ -9,7 +9,9 @@ use falchion_hid::HidProvider;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([420.0, 520.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([600.0, 700.0])
+            .with_min_inner_size([560.0, 480.0]),
         ..Default::default()
     };
     eframe::run_native(

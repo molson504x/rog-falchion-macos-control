@@ -8,9 +8,11 @@ use std::io::Write;
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use falchion_core::{
-    Brightness, DeviceProvider, Direction, Effect, Error, Keyboard, LightingSettings, RawReport,
-    Rgb, Speed, Transport, REPORT_LEN,
+    Brightness, ColorMode, DeviceProvider, Direction, Effect, Error, Keyboard, LightingSettings,
+    RawReport, Rgb, Speed, Thickness, Transport, REPORT_LEN,
 };
+
+pub mod hwtest;
 
 /// Control the ASUS ROG Falchion keyboard.
 #[derive(Debug, Parser)]
@@ -26,11 +28,11 @@ pub struct Cli {
 pub enum Command {
     /// List connected Falchion keyboards.
     List,
-    /// Show firmware information for the first connected keyboard.
+    /// Show firmware, active profile and active effect of the first keyboard.
     Info,
-    /// List supported lighting effects.
+    /// List lighting effects and the options each one uses.
     Effects,
-    /// Set the keyboard lighting.
+    /// Set the keyboard lighting, e.g. `falchion lighting -e wave -d left`.
     Lighting(LightingArgs),
     /// Developer tool: send one raw 64-byte report and print the replies.
     ///
@@ -98,21 +100,35 @@ pub fn format_hex(report: &[u8]) -> String {
 /// Arguments for `falchion lighting`.
 #[derive(Debug, Args)]
 pub struct LightingArgs {
-    /// Effect name (see `falchion effects`).
-    #[arg(long, default_value = "static")]
+    /// Effect: static, breathing, color-cycle, reactive, wave, ripple,
+    /// starry-night, quicksand, current, rain-drop (see `falchion effects`).
+    #[arg(long, short, default_value = "static")]
     pub effect: Effect,
-    /// Color as hex, e.g. "#ff8800".
-    #[arg(long, default_value = "#ffffff")]
-    pub color: Rgb,
-    /// Brightness from 0 (off) to 4 (max).
+    /// Color as hex ("#ff8800") or a name ("red"). Repeat for two colors or a
+    /// gradient: `-c red -c blue`. Quicksand takes six, one per row (top first).
+    #[arg(long = "color", short)]
+    pub colors: Vec<Rgb>,
+    /// How colors are chosen: single, double, random or gradient. Defaults to
+    /// double when two colors are given, otherwise the effect's first mode.
+    #[arg(long, short = 'm')]
+    pub color_mode: Option<ColorMode>,
+    /// Background color for unlit keys (starry-night, current, rain-drop).
+    #[arg(long, short)]
+    pub background: Option<Rgb>,
+    /// Brightness from 0 (off) to 4 (100%), in 25% steps.
     #[arg(long, default_value_t = Brightness::MAX)]
     pub brightness: u8,
-    /// Animation speed from 0 (slow) to 2 (fast).
-    #[arg(long, default_value_t = 1)]
+    /// Animation speed from 0 (slowest) to 4 (fastest).
+    #[arg(long, short, default_value_t = 2)]
     pub speed: u8,
-    /// Wave direction: left or right.
-    #[arg(long, default_value = "right")]
-    pub direction: Direction,
+    /// Direction the light moves: right, left, up, down, up-right, up-left,
+    /// down-right, down-left or out (wave); up or down (quicksand).
+    #[arg(long, short)]
+    pub direction: Option<Direction>,
+    /// Band thickness (wave, ripple) or star density (starry-night): slim,
+    /// normal or thick.
+    #[arg(long, short, default_value = "normal")]
+    pub thickness: Thickness,
     /// Save to the keyboard's active profile so it survives power cycles.
     #[arg(long)]
     pub save: bool,
@@ -121,14 +137,68 @@ pub struct LightingArgs {
 impl LightingArgs {
     /// Validates the arguments into [`LightingSettings`].
     pub fn to_settings(&self) -> falchion_core::Result<LightingSettings> {
-        Ok(LightingSettings {
-            effect: self.effect,
-            color: self.color,
+        let effect = self.effect;
+        let base = LightingSettings::for_effect(effect);
+        let modes = effect.color_modes();
+        let two_colors = self.colors.len() == 2 && modes.contains(&ColorMode::Double);
+        let color_mode = match self.color_mode {
+            Some(mode) => mode,
+            None if two_colors => ColorMode::Double,
+            None => base.color_mode,
+        };
+        let colors = if self.colors.is_empty() {
+            base.colors.clone()
+        } else {
+            self.colors.clone()
+        };
+        let settings = LightingSettings {
+            effect,
+            color_mode,
+            colors,
+            background: self.background,
             brightness: Brightness::new(self.brightness)?,
             speed: Speed::new(self.speed)?,
-            direction: self.direction,
-        })
+            direction: self.direction.unwrap_or(base.direction),
+            thickness: self.thickness,
+        };
+        settings.validate()?;
+        Ok(settings)
     }
+}
+
+/// Describes which controls `effect` uses, e.g. `colors: single, double`.
+pub fn describe_controls(effect: Effect) -> String {
+    let mut parts = Vec::new();
+    let modes: Vec<&str> = effect.color_modes().iter().map(|m| m.name()).collect();
+    if !modes.is_empty() {
+        parts.push(format!("colors: {}", modes.join(", ")));
+    }
+    if let Some(range) = effect.gradient_len() {
+        let (min, max) = (range.start(), range.end());
+        let count = if min == max {
+            format!("{min}")
+        } else {
+            format!("{min}-{max}")
+        };
+        parts.push(format!("gradient: {count} colors"));
+    }
+    if effect.uses_speed() {
+        parts.push("speed".into());
+    }
+    if effect.uses_direction() {
+        let names: Vec<&str> = effect.directions().iter().map(|d| d.name()).collect();
+        parts.push(format!("direction: {}", names.join(", ")));
+    }
+    if effect.uses_thickness() {
+        parts.push("thickness".into());
+    }
+    if effect.uses_background() {
+        parts.push("background".into());
+    }
+    if effect.reacts_to_keys() {
+        parts.push("reacts to key presses".into());
+    }
+    parts.join("; ")
 }
 
 /// Executes `cli` against devices from `provider`, writing output to `out`.
@@ -155,15 +225,37 @@ fn list<P: DeviceProvider>(provider: &P, out: &mut dyn Write) -> Result<()> {
 
 fn info<P: DeviceProvider>(provider: &P, out: &mut dyn Write) -> Result<()> {
     let (device, transport) = provider.open_first()?;
-    let version = Keyboard::new(transport).firmware_version()?;
+    let status = Keyboard::new(transport).status()?;
     writeln!(out, "{device}")?;
-    writeln!(out, "Firmware: {version}")?;
+    let firmware = status
+        .firmware
+        .as_deref()
+        .unwrap_or("no keyboard connected");
+    writeln!(out, "Firmware: {firmware}")?;
+    if let Some(dongle) = &status.dongle_firmware {
+        writeln!(out, "Dongle firmware: {dongle}")?;
+    }
+    if status.firmware.is_none() {
+        writeln!(
+            out,
+            "Wake the keyboard (press a key) or check it is switched on."
+        )?;
+        return Ok(());
+    }
+    writeln!(out, "Profile: {}", status.profile)?;
+    let effect = match status.effect() {
+        Some(effect) => effect.name().to_string(),
+        None if status.effect_code == 15 => "per-key (direct)".to_string(),
+        None => format!("unknown ({})", status.effect_code),
+    };
+    writeln!(out, "Effect: {effect}")?;
     Ok(())
 }
 
 fn effects(out: &mut dyn Write) -> Result<()> {
     for effect in Effect::ALL {
-        writeln!(out, "{effect}")?;
+        writeln!(out, "{:<13} {}", effect.name(), effect.description())?;
+        writeln!(out, "{:<13} {}", "", describe_controls(effect))?;
     }
     Ok(())
 }
@@ -181,7 +273,8 @@ fn lighting<P: DeviceProvider>(
         keyboard.save()?;
     }
     let effect = settings.effect;
-    writeln!(out, "Applied {effect} lighting.")?;
+    let saved = if args.save { " and saved it" } else { "" };
+    writeln!(out, "Applied {effect} lighting{saved}.")?;
     Ok(())
 }
 
@@ -229,11 +322,20 @@ mod tests {
     }
 
     fn wire_commands(provider: &MockProvider) -> Vec<Wire> {
-        let mut commands = Vec::new();
-        for raw in provider.transport.written() {
-            commands.push(Report::decode(&raw).unwrap().command());
+        let written = provider.transport.written().into_iter();
+        written
+            .map(|raw| Report::from_raw(raw).command().expect("known command"))
+            .collect()
+    }
+
+    fn settings(args: &[&str]) -> falchion_core::Result<LightingSettings> {
+        let argv: Vec<&str> = std::iter::once("lighting")
+            .chain(args.iter().copied())
+            .collect();
+        match parse(&argv).command {
+            Command::Lighting(lighting) => lighting.to_settings(),
+            other => panic!("parsed {other:?}"),
         }
-        commands
     }
 
     #[test]
@@ -247,6 +349,10 @@ mod tests {
             vec!["lighting", "--color", "nothex"],
             vec!["lighting", "--effect", "sparkle"],
             vec!["lighting", "--brightness", "300"],
+            vec!["lighting", "--direction", "sideways"],
+            vec!["lighting", "--color-mode", "triple"],
+            vec!["lighting", "--thickness", "huge"],
+            vec!["lighting", "--background", "navy"],
             vec!["unknown-command"],
             vec![],
         ];
@@ -280,14 +386,49 @@ mod tests {
         assert!(exec(&["list"], &provider).0.is_err());
     }
 
+    fn info_reply(args: &[u8]) -> Report {
+        Report::new(Wire::DeviceInfo, args).unwrap()
+    }
+
     #[test]
-    fn info_prints_firmware() {
+    fn info_prints_firmware_profile_and_effect() {
         let provider = MockProvider::with_device();
-        let response = Report::new(Wire::GetFirmwareVersion, &[2, 1, 0]).unwrap();
-        provider.transport.queue_response(&response);
+        let reply = info_reply(&[0, 0, 0x13, 0x61, 0x31, 0, 6, 4, 2]);
+        provider.transport.queue_response(&reply);
         let (result, out) = exec(&["info"], &provider);
-        assert!(result.is_ok());
-        assert!(out.contains("Firmware: 2.1.0"));
+        assert!(result.is_ok(), "{result:?}");
+        assert!(out.contains("Firmware: 13.61.31"));
+        assert!(out.contains("Profile: 2"));
+        assert!(out.contains("Effect: wave"));
+        assert!(!out.contains("Dongle"));
+    }
+
+    #[test]
+    fn info_prints_dongle_and_unusual_effects() {
+        let provider = MockProvider::with_device();
+        provider
+            .transport
+            .queue_response(&info_reply(&[0, 0, 7, 0, 2, 0, 6, 15, 1, 0xFF]));
+        let (_, out) = exec(&["info"], &provider);
+        assert!(out.contains("Dongle firmware: 7.0.2"));
+        assert!(out.contains("no keyboard connected"));
+        assert!(out.contains("Wake the keyboard"));
+        assert!(!out.contains("Profile"), "meaningless without a keyboard");
+
+        let provider = MockProvider::with_device();
+        provider.transport.queue_response(&info_reply(&[
+            0, 0, 7, 0, 2, 0, 6, 15, 1, 1, 0x13, 0x61, 0x31,
+        ]));
+        let (_, out) = exec(&["info"], &provider);
+        assert!(out.contains("Firmware: 13.61.31"));
+        assert!(out.contains("per-key (direct)"));
+
+        let provider = MockProvider::with_device();
+        provider
+            .transport
+            .queue_response(&info_reply(&[0, 0, 1, 2, 3, 0, 6, 0xF1, 1]));
+        let (_, out) = exec(&["info"], &provider);
+        assert!(out.contains("Effect: unknown (241)"));
     }
 
     #[test]
@@ -298,10 +439,85 @@ mod tests {
     }
 
     #[test]
-    fn effects_lists_all() {
+    fn effects_lists_all_with_controls() {
         let (result, out) = exec(&["effects"], &MockProvider::default());
         assert!(result.is_ok());
-        assert_eq!(out.lines().count(), Effect::ALL.len());
+        assert_eq!(out.lines().count(), Effect::ALL.len() * 2);
+        assert!(out.contains("starry-night"));
+        assert!(out.contains("direction: up, down"));
+    }
+
+    #[test]
+    fn describe_controls_per_effect() {
+        assert_eq!(describe_controls(Effect::Static), "colors: single");
+        assert_eq!(describe_controls(Effect::ColorCycle), "speed");
+        let wave = describe_controls(Effect::Wave);
+        assert!(wave.contains("gradient: 1-7 colors"), "{wave}");
+        assert!(wave.contains("thickness"));
+        let quicksand = describe_controls(Effect::Quicksand);
+        assert!(quicksand.contains("gradient: 6 colors"), "{quicksand}");
+        assert!(describe_controls(Effect::RainDrop).contains("background"));
+        assert!(describe_controls(Effect::Ripple).contains("reacts to key presses"));
+    }
+
+    #[test]
+    fn to_settings_uses_effect_defaults() {
+        let wave = settings(&["-e", "wave"]).unwrap();
+        assert_eq!(wave.color_mode, ColorMode::Gradient);
+        assert_eq!(wave.colors.len(), 7);
+        assert_eq!(wave.direction, Direction::Right);
+        assert_eq!(wave.speed.value(), 2);
+        let quicksand = settings(&["-e", "quicksand"]).unwrap();
+        assert_eq!(quicksand.direction, Direction::Up);
+    }
+
+    #[test]
+    fn to_settings_infers_double_from_two_colors() {
+        let breathing = settings(&["-e", "breathing", "-c", "red", "-c", "#0000ff"]).unwrap();
+        assert_eq!(breathing.color_mode, ColorMode::Double);
+        assert_eq!(breathing.colors, [Rgb::RED, Rgb::BLUE]);
+        let wave = settings(&["-e", "wave", "-c", "red", "-c", "blue"]).unwrap();
+        assert_eq!(wave.color_mode, ColorMode::Gradient);
+        assert_eq!(wave.colors.len(), 2);
+    }
+
+    #[test]
+    fn to_settings_accepts_every_option() {
+        let args = [
+            "-e",
+            "rain-drop",
+            "-m",
+            "random",
+            "-b",
+            "#000080",
+            "--brightness",
+            "1",
+            "-s",
+            "4",
+        ];
+        let rain = settings(&args).unwrap();
+        assert_eq!(rain.color_mode, ColorMode::Random);
+        assert_eq!(rain.background, Some(Rgb::new(0, 0, 0x80)));
+        assert_eq!(rain.brightness.percent(), 25);
+        assert_eq!(rain.speed.value(), 4);
+    }
+
+    #[test]
+    fn to_settings_rejects_options_the_effect_cannot_use() {
+        let cases: [&[&str]; 5] = [
+            &["-e", "static", "-m", "random"],
+            &["-e", "static", "-b", "blue"],
+            &["-e", "quicksand", "-d", "left"],
+            &["-e", "quicksand", "-c", "red"],
+            &["-e", "breathing", "-m", "double", "-c", "red"],
+        ];
+        for args in cases {
+            let result = settings(args);
+            assert!(
+                matches!(result, Err(Error::InvalidSettings(_))),
+                "{args:?}: {result:?}"
+            );
+        }
     }
 
     #[test]
@@ -309,28 +525,31 @@ mod tests {
         let provider = MockProvider::with_device();
         let args = ["lighting", "--effect", "wave", "--speed", "2"];
         let (result, out) = exec(&args, &provider);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "{result:?}");
         assert!(out.contains("Applied wave lighting."));
-        assert_eq!(wire_commands(&provider), [Wire::SetLighting]);
+        assert_eq!(wire_commands(&provider), [Wire::SetEffect]);
     }
 
     #[test]
     fn lighting_save_persists() {
         let provider = MockProvider::with_device();
-        let (result, _) = exec(&["lighting", "--save"], &provider);
+        let (result, out) = exec(&["lighting", "--save"], &provider);
         assert!(result.is_ok());
-        let expected = [Wire::SetLighting, Wire::Save];
+        assert!(out.contains("and saved it"));
+        let expected = [Wire::SetEffect, Wire::Save];
         assert_eq!(wire_commands(&provider), expected);
     }
 
     #[test]
     fn lighting_rejects_out_of_range_before_touching_device() {
         let provider = MockProvider::with_device();
-        for args in [
-            ["lighting", "--brightness", "9"],
-            ["lighting", "--speed", "3"],
-        ] {
-            assert!(exec(&args, &provider).0.is_err());
+        let cases: [&[&str]; 3] = [
+            &["lighting", "--brightness", "9"],
+            &["lighting", "--speed", "5"],
+            &["lighting", "--effect", "wave", "-m", "single"],
+        ];
+        for args in cases {
+            assert!(exec(args, &provider).0.is_err());
         }
         assert!(provider.transport.written().is_empty());
     }
@@ -400,7 +619,10 @@ mod tests {
 
     #[test]
     fn raw_reports_silence() {
-        let provider = MockProvider::with_device();
+        let provider = MockProvider {
+            transport: falchion_core::MockTransport::new(),
+            ..MockProvider::with_device()
+        };
         let (result, out) = exec(&["raw", "12", "00", "--timeout", "5"], &provider);
         assert!(result.is_ok());
         assert!(out.contains("no reply within 5 ms"));

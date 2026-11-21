@@ -1,8 +1,7 @@
 # User Guide
 
-> **Early development.** Parts of the keyboard protocol have been confirmed on a real
-> keyboard, but `falchion lighting`, `info` and the GUI still send placeholder packets,
-> so they may have no effect yet. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
+> **Early development.** Lighting effects and `falchion info` work on a real keyboard.
+> Profiles, key remapping, macros and the touch bar are not in the app yet.
 
 ROG Falchion Control ships two programs:
 
@@ -30,36 +29,59 @@ You should see something like `ROG Falchion (wired) 0b05:193c at ...`.
 | Goal | Command |
 |---|---|
 | List keyboards | `falchion list` |
-| Show firmware version | `falchion info` |
-| List lighting effects | `falchion effects` |
+| Firmware, active profile and effect | `falchion info` |
+| List effects and their options | `falchion effects` |
 | Solid orange | `falchion lighting --effect static --color "#ff8800"` |
-| Slow breathing, dim | `falchion lighting --effect breathing --color 00ffff --speed 0 --brightness 1` |
-| Leftward rainbow wave, keep after power-off | `falchion lighting --effect wave --direction left --save` |
-| Lights off | `falchion lighting --effect off` |
+| Slow breathing, red and blue | `falchion lighting -e breathing -c red -c blue --speed 0` |
+| Rainbow wave moving left, kept after power-off | `falchion lighting -e wave -d left --save` |
+| Red-to-blue wave from the centre, thick bands | `falchion lighting -e wave -c red -c blue -d out -t thick` |
+| White stars on a blue background | `falchion lighting -e starry-night -c white -b blue` |
+| Random-colour rain drops | `falchion lighting -e rain-drop -m random` |
+| Lights off | `falchion lighting --brightness 0` |
 | Help | `falchion --help`, `falchion lighting --help` |
 | Send a raw report (developers) | `falchion raw 12 00` (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#probing-the-keyboard)) |
 
-Lighting options:
+### Effects
+
+| Effect | What it does | Colours | Other options |
+|---|---|---|---|
+| `static` | One solid colour | 1 | — |
+| `breathing` | Fades in and out | 1, 2 or random | speed |
+| `color-cycle` | Whole keyboard cycles the spectrum | automatic | speed |
+| `reactive` | Pressed keys light up | 1, 2 or random | speed |
+| `wave` | Gradient sweeps across | 1–7 gradient stops | speed, direction (9), thickness |
+| `ripple` | Rings spread from pressed keys | 1–7 stops or random | speed, thickness |
+| `starry-night` | Random keys twinkle | 1, 2 or random | speed, density (`--thickness`), background |
+| `quicksand` | Rows fill up | 6 (one per row, top first) or random | speed, direction `up`/`down` |
+| `current` | Light flows across the keys | 1, 2 or random | speed, background |
+| `rain-drop` | Drops run down each column | 1, 2 or random | speed, background |
+
+### Lighting options
 
 | Option | Values | Default |
 |---|---|---|
-| `--effect` | `static`, `breathing`, `color-cycle`, `wave`, `reactive`, `off` | `static` |
-| `--color` | Hex `#rrggbb` (the `#` is optional) | `#ffffff` |
-| `--brightness` | `0` (off) to `4` (max) | `4` |
-| `--speed` | `0` (slow) to `2` (fast) | `1` |
-| `--direction` | `left`, `right` | `right` |
-| `--save` | Store the setting on the keyboard | off |
+| `-e`, `--effect` | See the table above (`rainbow` and `raindrop` also work) | `static` |
+| `-c`, `--color` | Hex `#rrggbb` (the `#` is optional) or a name: `red`, `orange`, `yellow`, `green`, `cyan`, `blue`, `purple`, `magenta`, `pink`, `white`, `black`. Repeat for more colours | the effect's own |
+| `-m`, `--color-mode` | `single`, `double`, `random`, `gradient` | `double` when two colours are given, otherwise the effect's first |
+| `-b`, `--background` | Colour for unlit keys (`starry-night`, `current`, `rain-drop`) | none (dark) |
+| `--brightness` | `0` (off) to `4` (100%), in 25% steps | `4` |
+| `-s`, `--speed` | `0` (slowest) to `4` (fastest) | `2` |
+| `-d`, `--direction` | Where the light moves: `right`, `left`, `up`, `down`, `up-right`, `up-left`, `down-right`, `down-left`, `out` (from the centre). Quicksand: `up` (fill from the bottom) or `down` | `right` (quicksand: `up`) |
+| `-t`, `--thickness` | `slim`, `normal`, `thick` (band width; star density for `starry-night`) | `normal` |
+| `--save` | Store the setting in the keyboard's active profile | off |
 
-Without `--save`, settings are lost when the keyboard powers off.
+Options an effect doesn't support are rejected with a message saying what it accepts. Without `--save`, the setting may be lost when the keyboard powers off.
 
 ## Desktop app
 
 Launch `falchion-gui`.
 
-1. **Keyboards** lists what was detected. Click **Refresh** after plugging in.
-2. **Lighting**: pick an effect. Color, speed and direction controls appear only when the effect uses them.
-3. Click **Apply** to try a setting, or **Apply & Save** to keep it.
-4. Status and errors appear at the bottom.
+1. **Header**: the connected keyboard, its firmware and active profile. Click **⟳ Refresh** after plugging it in. On start, the app selects the effect the keyboard is showing (it can't read the colours).
+2. **Effect**: click one of the ten effects. Hover for a description. Only the controls that effect uses are shown below it.
+3. **Colors**: choose **One color**, **Two colors**, **Random** or **Custom colors** where the effect offers a choice, then click a swatch to pick a colour. For gradients use **+**/**−** to add or remove stops (up to 7). Quicksand shows one swatch per row. Tick **Background color** for unlit keys.
+4. **Motion**: speed slider; for the rainbow wave, a 3 × 3 arrow pad sets the direction (the middle **✳** is outward from the centre); thickness or star density.
+5. **Brightness**: Off, 25%, 50%, 75% or 100%.
+6. Bottom bar: **Apply** shows the setting on the keyboard; **Apply & Save** also stores it in the active profile. Tick **Live preview** to send each change as you make it (not saved). **Factory default** resets the controls to a 50% rainbow wave. Status and errors appear underneath.
 
 ## Troubleshooting
 
@@ -69,4 +91,6 @@ Launch `falchion-gui`.
 | Permission or transport error on macOS | Go to System Settings → Privacy & Security → Input Monitoring and allow your terminal app or `falchion-gui`, then restart it. |
 | Permission error on Linux | Add a udev rule for vendor `0b05` that grants your user access to `hidraw`, then replug the keyboard. |
 | Settings revert after unplugging | Use `--save` or **Apply & Save**. |
+| "the keyboard rejected command 51 2C" | The keyboard refused the setting. Replug it and try again; if it keeps happening, open an issue with the command and the output of `falchion info`. |
+| "invalid lighting settings: …" | The effect doesn't support that option. Run `falchion effects` to see what each one accepts. |
 | Armoury Crate settings conflict | Profiles saved by Armoury Crate live on the keyboard. The last saved setting wins. |
