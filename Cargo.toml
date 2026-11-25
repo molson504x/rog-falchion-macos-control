@@ -18,7 +18,7 @@ falchion-core = { path = "src/falchion-core" }
 falchion-hid = { path = "src/falchion-hid" }
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }
-eframe = "0.29"
+eframe = "0.37"
 hidapi = "2.6"
 thiserror = "2"
 
