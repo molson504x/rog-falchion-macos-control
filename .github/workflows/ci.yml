@@ -55,7 +55,7 @@ jobs:
           components: llvm-tools-preview
       - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - uses: Swatinem/rust-cache@v2.9.3
-      - uses: taiki-e/install-action@v2.90.4
+      - uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-llvm-cov
       # Keep the ignore regex in sync with COV_IGNORE in the Makefile.
